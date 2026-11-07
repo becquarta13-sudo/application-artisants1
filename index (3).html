@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0055A5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Crafting – The digital job log for craftspeople</title>
+
+<!-- Tailwind CSS (CDN) et jsPDF (version épinglée) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  /* Bleu de France : bg-france, text-france, border-france… */
+  tailwind.config = { theme: { extend: { colors: { france: { DEFAULT: '#0055A5', dark: '#00417F' } } } } };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<!-- Composants réutilisables : cartes, champs, boutons -->
+<style type="text/tailwindcss">
+  @layer components {
+    .card  { @apply bg-white border border-slate-200 rounded-2xl shadow-sm p-5 sm:p-6; }
+    .lbl   { @apply block text-sm font-medium text-slate-600 mb-1.5; }
+    .input { @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-slate-800 placeholder-slate-400 transition focus:outline-none focus:border-france focus:ring-4 focus:ring-france/15; }
+    .btn-primary { @apply rounded-xl px-4 py-3 text-sm font-semibold transition active:scale-[.98] bg-france text-white hover:bg-france-dark disabled:opacity-50; }
+    .btn-soft    { @apply rounded-xl px-4 py-3 text-sm font-semibold transition active:scale-[.98] bg-france/10 text-france hover:bg-france/20 disabled:opacity-50; }
+    .btn-line    { @apply rounded-xl px-4 py-3 text-sm font-semibold transition active:scale-[.98] border border-slate-200 text-slate-600 hover:bg-slate-50; }
+  }
+</style>
+</head>
+
+<body class="bg-slate-50 text-slate-700 antialiased" style="font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;">
+
+<div class="max-w-2xl mx-auto px-4 pt-8 pb-16">
+
+  <!-- ===== En-tête : marque + slogan ===== -->
+  <header class="mb-8">
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 class="text-4xl font-bold tracking-tight text-france">Crafting</h1>
+        <p class="mt-1 text-sm text-slate-500">The digital job log for craftspeople</p>
+      </div>
+      <span id="net" class="mt-1 text-xs rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-500"></span>
+    </div>
+  </header>
+
+  <!-- ===== Navigation ===== -->
+  <nav class="flex gap-1 rounded-2xl border border-slate-200 bg-white p-1 mb-6 text-sm" aria-label="Sections">
+    <button data-tab="new">Nouvelle preuve</button>
+    <button data-tab="log">Carnet</button>
+    <button data-tab="contacts">Clients</button>
+    <button data-tab="profile">Mon profil</button>
+  </nav>
+
+  <!-- ===== 1. NOUVELLE PREUVE ===== -->
+  <section id="tab-new" class="card space-y-5">
+    <div>
+      <label class="lbl" for="clientSel">Client</label>
+      <div class="flex gap-2">
+        <select id="clientSel" class="input"></select>
+        <button type="button" id="addClientShortcut" class="btn-soft shrink-0" aria-label="Ajouter un client">＋</button>
+      </div>
+    </div>
+    <div>
+      <label class="lbl" for="chantier">Chantier / référence <span class="text-slate-400">(facultatif)</span></label>
+      <input id="chantier" class="input" placeholder="Ex. : Rénovation salle de bain">
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="lbl" for="status">Statut</label>
+        <select id="status" class="input">
+          <option value="devis">Devis envoyé</option><option value="cours" selected>En cours</option>
+          <option value="valide">Validé</option><option value="paye">Payé</option>
+        </select></div>
+      <div><label class="lbl" for="amount">Montant (€)</label>
+        <input id="amount" type="number" inputmode="decimal" min="0" step="0.01" class="input" placeholder="0,00"></div>
+    </div>
+
+    <div>
+      <span class="lbl">Photo horodatée</span>
+      <input id="photoInput" type="file" accept="image/*" capture="environment" class="hidden">
+      <button type="button" id="photoBtn" class="btn-line w-full py-4">📷 Prendre ou importer une photo</button>
+      <img id="photoPreview" alt="Aperçu" class="hidden mt-3 w-full max-h-72 object-cover rounded-xl border border-slate-200">
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between mb-1.5">
+        <label class="text-sm font-medium text-slate-600" for="desc">Travaux réalisés</label>
+        <button type="button" id="micBtn" class="btn-soft !py-1.5">🎤 Dicter</button>
+      </div>
+      <textarea id="desc" rows="5" class="input" placeholder="Décrivez précisément ce qui a été fait, constaté ou convenu avec le client…"></textarea>
+      <p id="micHint" class="text-xs text-slate-400 mt-1 min-h-[1rem]"></p>
+    </div>
+
+    <!-- Date / heure / adresse automatiques -->
+    <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3 text-sm">
+      <div class="flex justify-between gap-3"><span class="text-slate-500">Date et heure</span><span id="clock" class="font-medium text-slate-800 text-right"></span></div>
+      <div>
+        <div class="flex justify-between items-center mb-1.5">
+          <label for="addr" class="text-slate-500">Adresse du chantier</label>
+          <button type="button" id="gpsBtn" class="text-xs font-medium text-france hover:underline">📍 Actualiser</button>
+        </div>
+        <input id="addr" class="input !py-2.5 text-sm" placeholder="Recherche de l’adresse…">
+        <p id="gpsHint" class="text-xs text-slate-400 mt-1.5"></p>
+      </div>
+    </div>
+
+    <!-- Signature tactile du client -->
+    <div>
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-sm font-medium text-slate-600">Signature du client</span>
+        <button type="button" id="sigClear" class="text-xs font-medium text-slate-500 underline">Effacer / Recommencer</button>
+      </div>
+      <canvas id="sig" width="600" height="240" class="w-full rounded-xl border-2 border-dashed border-slate-300 bg-white" style="touch-action:none"></canvas>
+    </div>
+
+    <button type="button" id="saveBtn" class="btn-primary w-full !py-3.5 text-base">Enregistrer la preuve</button>
+    <p id="msg" class="text-sm text-center min-h-[1.25rem]" role="status"></p>
+  </section>
+
+  <!-- ===== 2. CARNET DE CHANTIER ===== -->
+  <section id="tab-log" class="hidden space-y-4">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="card !p-4"><p class="text-xs text-slate-500">À encaisser (validé)</p><p id="sumDue" class="mt-1 text-xl font-semibold text-emerald-700">0,00 €</p></div>
+      <div class="card !p-4"><p class="text-xs text-slate-500">Encaissé (payé)</p><p id="sumPaid" class="mt-1 text-xl font-semibold text-indigo-700">0,00 €</p></div>
+    </div>
+    <div class="card !p-4 grid sm:grid-cols-2 gap-3">
+      <input id="search" class="input" type="search" placeholder="🔍 Rechercher (client, adresse, texte…)">
+      <select id="filterClient" class="input"></select>
+    </div>
+    <button type="button" id="fullBtn" class="btn-soft w-full hidden"></button>
+    <div id="journal" class="grid sm:grid-cols-2 gap-4"></div>
+  </section>
+
+  <!-- ===== 3. CLIENTS ===== -->
+  <section id="tab-contacts" class="hidden space-y-4">
+    <div class="card space-y-4">
+      <h2 class="text-lg font-semibold text-slate-900">Ajouter un client</h2>
+      <div><label class="lbl" for="c-name">Nom</label><input id="c-name" class="input" placeholder="M. Dupont"></div>
+      <div><label class="lbl" for="c-phone">Téléphone (WhatsApp)</label><input id="c-phone" class="input" type="tel" placeholder="06 12 34 56 78"></div>
+      <div><label class="lbl" for="c-addr">Adresse</label><input id="c-addr" class="input" placeholder="12 rue des Lilas, 13000 Marseille"></div>
+      <button type="button" id="addContact" class="btn-primary w-full">Enregistrer le client</button>
+    </div>
+    <div id="contactList" class="space-y-2"></div>
+  </section>
+
+  <!-- ===== 4. PROFIL ARTISAN ===== -->
+  <section id="tab-profile" class="hidden card space-y-4">
+    <h2 class="text-lg font-semibold text-slate-900">Mon entreprise</h2>
+    <p class="text-sm text-slate-500">Ces informations apparaissent dans l’en-tête de vos rapports PDF et dans vos messages WhatsApp.</p>
+    <div><label class="lbl" for="p-company">Nom de l’entreprise</label><input id="p-company" class="input"></div>
+    <div><label class="lbl" for="p-name">Votre nom</label><input id="p-name" class="input"></div>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div><label class="lbl" for="p-phone">Téléphone</label><input id="p-phone" class="input" type="tel"></div>
+      <div><label class="lbl" for="p-email">Email</label><input id="p-email" class="input" type="email"></div>
+    </div>
+    <div><label class="lbl" for="p-siret">SIRET</label><input id="p-siret" class="input"></div>
+    <div><label class="lbl" for="p-addr">Adresse de l’entreprise</label><input id="p-addr" class="input"></div>
+    <button type="button" id="saveProfile" class="btn-primary w-full">Enregistrer mon profil</button>
+    <p id="pmsg" class="text-sm text-center text-emerald-600 min-h-[1.25rem]"></p>
+  </section>
+</div>
+
+<script>
+/* =====================================================================
+   Crafting – application complète en un seul fichier
+   Stockage : preuves + photos (base64) dans IndexedDB ; profil et clients dans localStorage.
+   ===================================================================== */
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtLong = (iso) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
+  const fmtShort = (iso) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+
+  const eur = (n) => (Number(n) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' €';
+  /* Statuts : libellé, classes du badge, couleur RGB pour le PDF (les anciennes preuves sans statut = « En cours ») */
+  const ST = {
+    devis:  { l: 'Devis envoyé', c: 'bg-amber-100 text-amber-800 ring-amber-300',       rgb: [180, 120, 0] },
+    cours:  { l: 'En cours',     c: 'bg-sky-100 text-sky-800 ring-sky-300',             rgb: [2, 132, 199] },
+    valide: { l: 'Validé',       c: 'bg-emerald-100 text-emerald-800 ring-emerald-300', rgb: [4, 120, 87] },
+    paye:   { l: 'Payé',         c: 'bg-indigo-100 text-indigo-800 ring-indigo-300',    rgb: [67, 56, 202] },
+  };
+  const stOf = (p) => ST[p.status] || ST.cours;
+  const badge = (p) => `<span class="shrink-0 h-fit text-[11px] font-semibold rounded-full px-2.5 py-1 ring-1 ${stOf(p).c}">${stOf(p).l}</span>`;
+
+  /* ---------- Stockage ---------- */
+  const getLS = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const setLS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+  const dbPromise = new Promise((res, rej) => {
+    const r = indexedDB.open('chantierpreuve', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('proofs', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  const idb = (mode, fn) => dbPromise.then((d) => new Promise((res, rej) => {
+    const t = d.transaction('proofs', mode), q = fn(t.objectStore('proofs'));
+    t.oncomplete = () => res(q && q.result);
+    t.onerror = () => rej(t.error);
+  }));
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); // demande un stockage durable
+
+  let profile = getLS('cp:profile', {});
+  let contacts = getLS('cp:contacts', []);
+  let proofs = [];
+  let photo = null, pos = null, addrEdited = false;
+
+  const say = (el, t, ok = true) => {
+    el.textContent = t; el.className = el.className.replace(/text-(red|emerald)-\d+/g, '') + (ok ? ' text-emerald-600' : ' text-red-600');
+    setTimeout(() => { if (el.textContent === t) el.textContent = ''; }, 3500);
+  };
+
+  /* ---------- Onglets ---------- */
+  const tabs = ['new', 'log', 'contacts', 'profile'];
+  function showTab(t) {
+    tabs.forEach((n) => {
+      $('tab-' + n).classList.toggle('hidden', n !== t);
+      document.querySelector(`[data-tab=${n}]`).className = 'flex-1 rounded-xl px-2 py-2.5 font-medium transition ' +
+        (n === t ? 'bg-france text-white' : 'text-slate-500 hover:bg-slate-50');
+    });
+    if (t === 'log') renderLog();
+  }
+  document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+  $('addClientShortcut').onclick = () => showTab('contacts');
+
+  /* ---------- Réseau ---------- */
+  const net = () => { $('net').textContent = navigator.onLine ? '● En ligne' : '○ Hors ligne – tout est sauvegardé sur l’appareil'; };
+  addEventListener('online', net); addEventListener('offline', net); net();
+
+  /* ---------- Horloge ---------- */
+  const tick = () => { $('clock').textContent = fmtLong(new Date().toISOString()); };
+  tick(); setInterval(tick, 1000);
+
+  /* ---------- Géolocalisation + adresse postale (OpenStreetMap / Nominatim) ---------- */
+  async function reverse(lat, lon) {
+    const ac = new AbortController(), to = setTimeout(() => ac.abort(), 8000);
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=fr&lat=${lat}&lon=${lon}`, { signal: ac.signal });
+      const d = await r.json(), a = d.address || {};
+      const street = [a.house_number, a.road || a.pedestrian || a.hamlet].filter(Boolean).join(' ');
+      const city = [a.postcode, a.city || a.town || a.village || a.municipality].filter(Boolean).join(' ');
+      return [street, city].filter(Boolean).join(', ') || d.display_name || '';
+    } catch { return ''; } finally { clearTimeout(to); }
+  }
+  function locate() {
+    const hint = $('gpsHint');
+    if (!navigator.geolocation) { hint.textContent = 'GPS indisponible : saisissez l’adresse.'; return; }
+    hint.textContent = 'Localisation en cours…';
+    navigator.geolocation.getCurrentPosition(async (p) => {
+      pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy) };
+      const coords = `${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)} (±${pos.acc} m)`;
+      const a = await reverse(pos.lat, pos.lon);
+      if (a) { if (!addrEdited) $('addr').value = a; hint.textContent = 'Adresse trouvée via OpenStreetMap · ' + coords; }
+      else hint.textContent = 'Hors ligne : coordonnées enregistrées (' + coords + '). Complétez l’adresse si besoin.';
+    }, () => { pos = null; hint.textContent = 'Position refusée ou indisponible : saisissez l’adresse.'; },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
+  }
+  $('addr').addEventListener('input', () => { addrEdited = true; });
+  $('gpsBtn').onclick = () => { addrEdited = false; locate(); };
+  locate();
+
+  /* ---------- Photo avec horodatage incrusté ---------- */
+  $('photoBtn').onclick = () => $('photoInput').click();
+  $('photoInput').onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const ratio = Math.min(1, 1200 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * ratio); c.height = Math.round(img.height * ratio);
+      const x = c.getContext('2d'); x.drawImage(img, 0, 0, c.width, c.height);
+      // Bandeau date/heure + adresse en bas de l'image
+      const fs = Math.max(14, Math.round(c.width / 48)), h = fs * 2.6;
+      x.fillStyle = 'rgba(15,23,42,.6)'; x.fillRect(0, c.height - h, c.width, h);
+      x.fillStyle = '#fff'; x.font = `600 ${fs}px sans-serif`; x.textBaseline = 'middle';
+      x.fillText(fmtShort(new Date().toISOString()), fs * .6, c.height - h * .68);
+      x.font = `${fs * .9}px sans-serif`;
+      x.fillText(($('addr').value || (pos ? `${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)}` : '')).slice(0, 90), fs * .6, c.height - h * .3);
+      photo = c.toDataURL('image/jpeg', 0.72);
+      $('photoPreview').src = photo; $('photoPreview').classList.remove('hidden');
+      $('photoBtn').textContent = '📷 Changer la photo';
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(f);
+  };
+
+  /* ---------- Dictée vocale (Web Speech API) ---------- */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listening = false, base = '';
+  const micOff = () => { listening = false; $('micBtn').textContent = '🎤 Dicter'; if ($('micHint').textContent.startsWith('Je')) $('micHint').textContent = ''; };
+  if (!SR) {
+    $('micBtn').disabled = true; $('micBtn').classList.add('opacity-40');
+    $('micHint').textContent = 'Dictée indisponible sur ce navigateur (essayez Chrome ou Safari).';
+  } else {
+    rec = new SR(); rec.lang = 'fr-FR'; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = (e) => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; $('desc').value = base + t; };
+    rec.onend = micOff;
+    rec.onerror = () => { $('micHint').textContent = 'Micro refusé ou indisponible.'; micOff(); };
+    $('micBtn').onclick = () => {
+      if (listening) { rec.stop(); return; }
+      base = $('desc').value ? $('desc').value.trimEnd() + ' ' : '';
+      try { rec.start(); } catch { return; }
+      listening = true; $('micBtn').textContent = '⏹ Arrêter'; $('micHint').textContent = 'Je vous écoute…';
+    };
+  }
+
+  /* ---------- Signature tactile (canvas) ---------- */
+  const cv = $('sig'), cx = cv.getContext('2d');
+  let drawing = false, signed = false;
+  cx.lineWidth = 3.5; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#0f172a';
+  const pt = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+  cv.onpointerdown = (e) => { drawing = true; cv.setPointerCapture(e.pointerId); const [x, y] = pt(e); cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + .1, y + .1); cx.stroke(); signed = true; };
+  cv.onpointermove = (e) => { if (!drawing) return; const [x, y] = pt(e); cx.lineTo(x, y); cx.stroke(); };
+  cv.onpointerup = cv.onpointercancel = () => { drawing = false; };
+  const sigClear = () => { cx.clearRect(0, 0, cv.width, cv.height); signed = false; };
+  $('sigClear').onclick = sigClear;
+
+  /* ---------- Profil artisan ---------- */
+  const pf = ['company', 'name', 'phone', 'email', 'siret', 'addr'];
+  pf.forEach((k) => { $('p-' + k).value = profile[k] || ''; });
+  $('saveProfile').onclick = () => {
+    pf.forEach((k) => { profile[k] = $('p-' + k).value.trim(); });
+    setLS('cp:profile', profile); say($('pmsg'), 'Profil enregistré ✔');
+  };
+
+  /* ---------- Clients ---------- */
+  function renderContacts() {
+    $('clientSel').innerHTML = contacts.length
+      ? contacts.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+      : '<option value="">Aucun client : ajoutez-en un →</option>';
+    $('contactList').innerHTML = contacts.map((c) => `
+      <div class="card !p-4 flex items-center justify-between gap-3">
+        <div class="min-w-0"><p class="font-medium text-slate-900 truncate">${esc(c.name)}</p>
+          <p class="text-xs text-slate-500 truncate">${esc([c.phone, c.addr].filter(Boolean).join(' · '))}</p></div>
+        <button data-delc="${c.id}" class="text-xs text-slate-400 hover:text-red-600">Supprimer</button>
+      </div>`).join('') || '<p class="text-sm text-slate-400 text-center">Aucun client enregistré.</p>';
+  }
+  $('addContact').onclick = () => {
+    const name = $('c-name').value.trim(); if (!name) return;
+    contacts.push({ id: Date.now().toString(36), name, phone: $('c-phone').value.trim(), addr: $('c-addr').value.trim() });
+    setLS('cp:contacts', contacts);
+    ['c-name', 'c-phone', 'c-addr'].forEach((i) => { $(i).value = ''; });
+    renderContacts(); showTab('new');
+  };
+  $('contactList').addEventListener('click', (e) => {
+    const id = e.target.dataset.delc;
+    if (id && confirm('Supprimer ce client ? Ses preuves restent dans le carnet.')) { contacts = contacts.filter((c) => c.id !== id); setLS('cp:contacts', contacts); renderContacts(); }
+  });
+  // Pré-remplit l'adresse du chantier avec celle du client si le GPS n'a rien donné
+  $('clientSel').onchange = () => { const c = contacts.find((x) => x.id === $('clientSel').value); if (c && c.addr && !$('addr').value) $('addr').value = c.addr; };
+
+  /* ---------- Enregistrer une preuve ---------- */
+  async function sha(obj) {
+    try {
+      const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(obj)));
+      return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 16).toUpperCase();
+    } catch { return 'n/d'; }
+  }
+  $('saveBtn').onclick = async () => {
+    const c = contacts.find((x) => x.id === $('clientSel').value);
+    const desc = $('desc').value.trim();
+    if (!c) return say($('msg'), 'Choisissez ou ajoutez un client.', false);
+    if (!desc && !photo) return say($('msg'), 'Ajoutez une photo ou une description.', false);
+    const e = {
+      id: Date.now().toString(36), ts: new Date().toISOString(), contactId: c.id, client: c.name,
+      chantier: $('chantier').value.trim(), desc, photo,
+      signature: signed ? cv.toDataURL('image/png') : null,   // signature en base64
+      status: $('status').value, amount: parseFloat($('amount').value) || 0,
+      addr: $('addr').value.trim() || 'Adresse non renseignée', lat: pos?.lat ?? null, lon: pos?.lon ?? null,
+    };
+    e.hash = await sha({ c: e.client, d: e.desc, t: e.ts, a: e.addr, p: e.photo ? e.photo.length : 0, s: e.signature ? e.signature.length : 0, m: e.amount });
+    try { await idb('readwrite', (s) => s.put(e)); } catch { return say($('msg'), 'Stockage plein ou refusé.', false); }
+    proofs.unshift(e);
+    $('desc').value = ''; $('chantier').value = ''; photo = null; $('photoInput').value = '';
+    $('amount').value = ''; $('status').value = 'cours'; sigClear();
+    $('photoPreview').classList.add('hidden'); $('photoBtn').textContent = '📷 Prendre ou importer une photo';
+    say($('msg'), 'Preuve enregistrée sur l’appareil ✔');
+  };
+
+  /* ---------- Carnet : cartes + recherche / filtre ---------- */
+  function renderLog() {
+    const names = [...new Set(proofs.map((p) => p.client))];
+    const cur = $('filterClient').value;
+    $('filterClient').innerHTML = '<option value="">Tous les clients</option>' + names.map((n) => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    const q = $('search').value.trim().toLowerCase(), f = $('filterClient').value;
+    const list = proofs.filter((p) => (!f || p.client === f) && (!q || [p.client, p.chantier, p.desc, p.addr].join(' ').toLowerCase().includes(q)));
+
+    $('sumDue').textContent = eur(proofs.filter((p) => p.status === 'valide').reduce((t, p) => t + (p.amount || 0), 0));
+    $('sumPaid').textContent = eur(proofs.filter((p) => p.status === 'paye').reduce((t, p) => t + (p.amount || 0), 0));
+    $('fullBtn').classList.toggle('hidden', !f || !list.length);
+    $('fullBtn').textContent = `📄 Rapport PDF complet – ${f} (${list.length})`;
+    $('journal').innerHTML = list.map((p) => `
+      <article class="card !p-0 overflow-hidden flex flex-col">
+        ${p.photo ? `<img src="${p.photo}" alt="" class="h-40 w-full object-cover">` : ''}
+        <div class="p-4 flex-1 space-y-1">
+          <div class="flex items-start justify-between gap-2"><h3 class="font-semibold text-slate-900">${esc(p.client)}</h3>${badge(p)}</div>
+          ${p.chantier ? `<p class="text-xs text-france">${esc(p.chantier)}</p>` : ''}
+          <p class="text-xs text-slate-500">🕒 ${fmtShort(p.ts)}</p>
+          <p class="text-xs text-slate-500">📍 ${esc(p.addr)}</p>
+          <p class="text-sm text-slate-700 line-clamp-3 pt-1">${esc(p.desc) || '<em class="text-slate-400">Sans description</em>'}</p>
+          <div class="flex items-center justify-between pt-2">
+            <span class="font-semibold text-slate-900">${p.amount ? eur(p.amount) : ''}</span>
+            ${p.signature ? `<img src="${p.signature}" alt="Signature" class="h-10 rounded border border-slate-200 bg-white px-1">` : '<span class="text-xs text-slate-400">Non signé</span>'}
+          </div>
+        </div>
+        <div class="px-4 pb-3">
+          <select data-st="${p.id}" class="input !py-2 text-sm" aria-label="Changer le statut">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${k === (p.status || 'cours') ? 'selected' : ''}>${v.l}</option>`).join('')}</select>
+        </div>
+        <div class="px-4 pb-4 flex gap-2">
+          <button data-pdf="${p.id}" class="btn-primary flex-1 !px-2">PDF</button>
+          <button data-wa="${p.id}" class="btn-soft flex-1 !px-2">WhatsApp</button>
+          <button data-del="${p.id}" class="btn-line !px-3" aria-label="Supprimer">🗑</button>
+        </div>
+      </article>`).join('') || '<p class="text-sm text-slate-400 col-span-full text-center py-8">Aucune preuve trouvée.</p>';
+  }
+  $('search').oninput = renderLog; $('filterClient').onchange = renderLog;
+  $('fullBtn').onclick = () => buildPdf(proofs.filter((p) => p.client === $('filterClient').value).sort((a, b) => a.ts.localeCompare(b.ts)));
+  $('journal').addEventListener('change', async (ev) => {      // changement rapide de statut
+    const sel = ev.target.closest('select[data-st]'); if (!sel) return;
+    const p = proofs.find((x) => x.id === sel.dataset.st); p.status = sel.value;
+    await idb('readwrite', (st) => st.put(p)); renderLog();
+  });
+  $('journal').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('button'); if (!b) return;
+    if (b.dataset.pdf) buildPdf([proofs.find((p) => p.id === b.dataset.pdf)]);
+    if (b.dataset.wa) sendWhatsApp(proofs.find((p) => p.id === b.dataset.wa));
+    if (b.dataset.del && confirm('Supprimer cette preuve définitivement ?')) {
+      await idb('readwrite', (s) => s.delete(b.dataset.del)); proofs = proofs.filter((p) => p.id !== b.dataset.del); renderLog();
+    }
+  });
+
+  /* ---------- Partage WhatsApp structuré ---------- */
+  function sendWhatsApp(p) {
+    const c = contacts.find((x) => x.id === p.contactId);
+    let num = (c?.phone || '').replace(/\D/g, '');
+    if (num.startsWith('0')) num = '33' + num.slice(1);              // numéro français → format international
+    const map = p.lat != null ? `\n🗺️ Plan : https://www.google.com/maps?q=${p.lat},${p.lon}` : '';
+    const msg =
+`*COMPTE-RENDU D’INTERVENTION*
+━━━━━━━━━━━━━━
+👤 *Client :* ${p.client}${p.chantier ? `\n🏗️ *Chantier :* ${p.chantier}` : ''}
+📅 *Date et heure :* ${fmtLong(p.ts)}
+📍 *Adresse :* ${p.addr}${map}
+
+🛠️ *Travaux réalisés :*
+${p.desc || '(voir photo)'}
+${p.amount ? `\n💶 *Montant :* ${eur(p.amount)}` : ''}
+🏷️ *Statut :* ${stOf(p).l}
+✍️ *Signature client :* ${p.signature ? 'recueillie sur place ✅' : 'non recueillie'}
+
+✅ *Confirmation :* merci de confirmer la bonne réception de ce compte-rendu en répondant « OK ».
+🔎 Réf. ${p.hash}
+━━━━━━━━━━━━━━
+${[profile.company, profile.name, profile.phone].filter(Boolean).join(' · ')}`;
+    window.open((num ? `https://wa.me/${num}` : 'https://wa.me/') + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+
+  /* ---------- Rapport PDF (jsPDF) ---------- */
+  function buildPdf(list) {
+    if (!window.jspdf) return alert('jsPDF n’est pas chargé : une connexion est nécessaire la première fois.');
+    list = list.filter(Boolean); if (!list.length) return;
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), M = 16, W = 210, TW = W - 2 * M;
+    const client = list[0].client, contact = contacts.find((c) => c.id === list[0].contactId) || {};
+    let y = M;
+    const need = (h) => { if (y + h > 280) { doc.addPage(); y = M; } };
+    const line = (c = [226, 232, 240]) => { doc.setDrawColor(...c); doc.setLineWidth(.2); doc.line(M, y, W - M, y); y += 5; };
+    const text = (t, size, bold, color, gap = 1.5) => {
+      doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(...color);
+      doc.splitTextToSize(String(t), TW).forEach((l) => { need(size * .5); doc.text(l, M, y); y += size * .45; }); y += gap;
+    };
+
+    // En-tête de l'entreprise artisanale
+    text(profile.company || 'Entreprise artisanale', 18, true, [15, 23, 42], 1);
+    [profile.name, profile.addr, [profile.phone, profile.email].filter(Boolean).join('  |  '), profile.siret && 'SIRET ' + profile.siret]
+      .filter(Boolean).forEach((l) => text(l, 9, false, [100, 116, 139], 0.5));
+    y += 3; line([0, 85, 165]);
+
+    text('RAPPORT D’INTERVENTION', 14, true, [0, 85, 165], 3);
+    text('Client : ' + client, 11, true, [15, 23, 42], 0.5);
+    [contact.phone && 'Tél. : ' + contact.phone, contact.addr && 'Adresse du client : ' + contact.addr,
+     'Édité le ' + fmtLong(new Date().toISOString())].filter(Boolean).forEach((l) => text(l, 9, false, [71, 85, 105], 0.5));
+    y += 4; line();
+
+    list.forEach((p, i) => {
+      need(40);
+      text(`Intervention ${i + 1} – ${fmtLong(p.ts)}`, 11, true, [15, 23, 42], 1);
+      // Badge de statut coloré + montant
+      { const lab = stOf(p).l; doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+        const bw = doc.getTextWidth(lab) + 7; need(8);
+        doc.setFillColor(...stOf(p).rgb); doc.roundedRect(M, y - 3.6, bw, 5.8, 2.9, 2.9, 'F');
+        doc.setTextColor(255, 255, 255); doc.text(lab, M + 3.5, y + .3);
+        if (p.amount) { doc.setTextColor(15, 23, 42); doc.setFontSize(10); doc.text('Montant : ' + (Number(p.amount).toFixed(2).replace('.', ',')) + ' EUR', M + bw + 5, y + .3); }
+        y += 7; }
+      if (p.chantier) text('Chantier : ' + p.chantier, 9.5, false, [71, 85, 105], 0.5);
+      text('Adresse : ' + p.addr, 9.5, false, [71, 85, 105], 0.5);
+      if (p.lat != null) text(`GPS : ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`, 8.5, false, [148, 163, 184], 1.5);
+      text(p.desc || '—', 10, false, [51, 65, 85], 2);
+      if (p.photo) {
+        try {
+          const pr = doc.getImageProperties(p.photo); let w = Math.min(120, TW), h = w * pr.height / pr.width;
+          if (h > 90) { h = 90; w = h * pr.width / pr.height; }
+          need(h + 4); doc.addImage(p.photo, 'JPEG', M, y, w, h); y += h + 3;
+        } catch { /* photo illisible : on continue */ }
+      }
+      text('Empreinte d’intégrité : ' + p.hash, 8, false, [148, 163, 184], 2);
+      line();
+    });
+
+    // Signatures
+    need(50); y += 6;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(51, 65, 85);
+    doc.text('L’artisan', M, y); doc.text('Le client (« Lu et approuvé »)', W / 2 + 4, y);
+    doc.setDrawColor(148, 163, 184); doc.line(M, y + 20, M + 70, y + 20); doc.line(W / 2 + 4, y + 20, W - M, y + 20);
+    // Signature tactile du client (la plus récente du rapport)
+    const sg = [...list].reverse().find((q) => q.signature);
+    if (sg) { try { doc.addImage(sg.signature, 'PNG', W / 2 + 4, y + 1.5, 45, 18); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(100, 116, 139); doc.text('Signé le ' + fmtLong(sg.ts), W / 2 + 4, y + 24); } catch { /* signature illisible */ } }
+
+    // Pagination
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(148, 163, 184); doc.text(`Crafting – page ${i}/${n}`, W / 2, 291, { align: 'center' }); }
+
+    // Partage natif si possible (WhatsApp, email…), sinon téléchargement
+    const name = 'Rapport-' + client.replace(/[^\w-]+/g, '_') + '.pdf';
+    const file = new File([doc.output('blob')], name, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file], title: name }).catch(() => doc.save(name));
+    else doc.save(name);
+  }
+
+  /* ---------- PWA : manifeste injecté (aucun fichier externe) ---------- */
+  const icon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="40" fill="#0055A5"/><path d="M52 100l30 30 60-70" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  const mf = document.createElement('link');
+  mf.rel = 'manifest';
+  mf.href = URL.createObjectURL(new Blob([JSON.stringify({
+    name: 'Crafting', short_name: 'Crafting', display: 'standalone', start_url: '.',
+    background_color: '#f8fafc', theme_color: '#0055A5', icons: [{ src: icon, sizes: '192x192', type: 'image/svg+xml' }],
+  })], { type: 'application/manifest+json' }));
+  document.head.appendChild(mf);
+
+  /* ---------- Démarrage ---------- */
+  renderContacts();
+  showTab('new');
+  idb('readonly', (s) => s.getAll()).then((all) => { proofs = (all || []).sort((a, b) => b.ts.localeCompare(a.ts)); });
+})();
+</script>
+</body>
+</html>
